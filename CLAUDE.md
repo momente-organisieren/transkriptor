@@ -1,0 +1,201 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Project Overview
+
+Transkriptor is a locally-hosted web application for automatic transcription of audio/video files with speaker diarization. The application uses WhisperX (via onerahmet/openai-whisper-asr-webservice) for speech recognition and pyannote for speaker identification. All processing happens locally with GPU acceleration.
+
+## Architecture
+
+### Two-Service System
+
+The application consists of two Docker containers orchestrated via `docker-compose.yml`:
+
+1. **whisper-api** (Backend)
+   - Image: `onerahmet/openai-whisper-asr-webservice:latest-gpu`
+   - Port: 9000
+   - Provides REST API for transcription (`/asr` endpoint)
+   - Requires NVIDIA GPU with Container Toolkit
+   - Uses WhisperX engine for ASR with speaker diarization
+   - Requires Hugging Face token for pyannote models (segmentation-3.0, speaker-diarization-3.1)
+
+2. **frontend** (Web UI)
+   - Custom nginx container serving static files
+   - Port: 3000 (exposed), 80 (internal)
+   - Single-page application (vanilla JS, no framework)
+   - nginx acts as reverse proxy: `/api/*` routes to `whisper-api:9000`
+
+### Frontend Architecture
+
+The frontend is a single-class application (`Transkriptor` in `frontend/app.js`):
+- **No build process** - vanilla HTML/CSS/JS served directly
+- Three main views: Upload → Progress → Editor
+- Editable transcript segments with speaker renaming
+- Export formats: TXT, SRT, VTT, JSON, Word (HTML-based .doc)
+
+Key frontend files:
+- `index.html` - Main HTML structure with three sections (upload, progress, editor)
+- `app.js` - Main application logic in `Transkriptor` class
+- `styles.css` - Complete styling
+- `nginx.conf` - Reverse proxy configuration
+
+### API Communication
+
+Frontend calls backend via nginx proxy:
+- Frontend: `fetch('/api/asr?...')`
+- nginx rewrites to: `http://whisper-api:9000/asr?...`
+- API health check: `GET /api/` redirects to `/docs` (FastAPI endpoint)
+
+## Common Commands
+
+### Development & Deployment
+
+```bash
+# Start the application
+docker compose up -d
+
+# View logs (especially useful during first start for model downloads)
+docker compose logs -f whisper-api
+docker compose logs -f frontend
+
+# Restart containers (e.g., after .env changes)
+docker compose restart
+
+# Stop and remove containers
+docker compose down
+
+# Rebuild frontend after code changes
+docker compose up -d --build frontend
+```
+
+### Diagnostics
+
+```bash
+# Run comprehensive diagnostic script
+./diagnose.sh
+
+# Check API directly
+curl http://localhost:9000/
+
+# Test transcription
+curl -X POST -F 'audio_file=@test.wav' 'http://localhost:9000/asr?diarize=true&output=json'
+
+# Check GPU access in container
+docker run --rm --gpus all nvidia/cuda:12.0-base nvidia-smi
+```
+
+### Configuration
+
+Environment variables in `.env`:
+- `HF_TOKEN` - Hugging Face token (required for diarization)
+- `ASR_MODEL` - Model size: tiny, base, small, medium, large-v3 (default)
+- `DEBUG` - Set to "true" for verbose logs
+
+Both `HF_TOKEN` and `HUGGINGFACE_TOKEN` are set to the same value for compatibility.
+
+## Important Technical Details
+
+### nginx Proxy Configuration
+
+The `nginx.conf` has two location blocks for the API:
+- `location = /api` - Exact match for root API endpoint
+- `location /api/` - Prefix match for all API paths
+
+Both proxy to `http://whisper-api:9000/` with the `/api` prefix removed. This dual-block approach prevents 502 errors from empty path rewrites.
+
+Timeouts are set to 1200s (20 minutes) for long transcription jobs.
+
+### API Parameters
+
+The `/asr` endpoint accepts:
+- `audio_file` - Multipart file upload (audio or video)
+- `output=json` - Response format
+- `language` - Language code (auto-detect if omitted)
+- `diarize=true` - Enable speaker diarization
+- `min_speakers` / `max_speakers` - Speaker count constraints
+- `word_timestamps=true` - Enable word-level timestamps
+
+### Response Format
+
+The API returns JSON with structure:
+```json
+{
+  "text": "full transcript",
+  "segments": [
+    {
+      "start": 0.0,
+      "end": 2.5,
+      "text": "segment text",
+      "speaker": "SPEAKER_00"
+    }
+  ]
+}
+```
+
+The frontend stores this in `transcriptData` and renders editable segments.
+
+### GPU Requirements
+
+- NVIDIA GPU with 8+ GB VRAM recommended for large models
+- `nvidia-container-toolkit` must be installed and configured
+- Docker Compose uses `deploy.resources.reservations.devices` for GPU access
+- First startup downloads ~10 GB of models (cached in Docker volumes)
+
+### Volumes
+
+Two named volumes persist model caches:
+- `whisper_cache` - Maps to `/root/.cache`
+- `huggingface_cache` - Maps to `/root/.cache/huggingface`
+
+This prevents re-downloading models on container restart.
+
+## Troubleshooting Context
+
+### "API offline" Status
+- Check if HF_TOKEN is set correctly in `.env` (must start with `hf_`, not be placeholder)
+- Verify pyannote model terms accepted on Hugging Face website
+- First startup takes several minutes for model downloads
+- Check logs: `docker compose logs whisper-api`
+
+### 502 Bad Gateway
+- Usually occurs during model download or initialization
+- Wait for startup_period (600s defined in healthcheck)
+- Verify whisper-api container is healthy: `docker compose ps`
+
+### GPU Not Detected
+- Run: `docker run --rm --gpus all nvidia/cuda:12.0-base nvidia-smi`
+- If fails, reconfigure: `sudo nvidia-ctk runtime configure --runtime=docker && sudo systemctl restart docker`
+
+### Healthcheck Details
+The healthcheck uses Python to fetch `/docs` (FastAPI standard endpoint) because `/health` returns 404. Start period is 600s to account for model downloads on first run.
+
+## Code Modification Guidelines
+
+### Frontend Changes
+After modifying `frontend/` files, rebuild the container:
+```bash
+docker compose up -d --build frontend
+```
+
+No build process needed - edit HTML/CSS/JS directly.
+
+### Changing Models
+Edit `docker-compose.yml`:
+```yaml
+environment:
+  - ASR_MODEL=medium  # or: tiny, base, small, large-v3
+```
+Then restart: `docker compose down && docker compose up -d`
+
+### Port Changes
+- Frontend: Change `ports: - "3000:80"` in docker-compose.yml
+- API direct access: Change `ports: - "9000:9000"`
+
+## File Locations
+
+- Application logic: `frontend/app.js` - `Transkriptor` class
+- API proxy config: `frontend/nginx.conf` - Lines 19-63
+- Container orchestration: `docker-compose.yml`
+- Environment variables: `.env` (copy from `.env.example`)
+- Diagnostic tool: `diagnose.sh`
