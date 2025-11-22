@@ -626,6 +626,28 @@ body::before {
     display: inline-block;
 }
 
+.segment-speaker-select {
+    font-weight: 600;
+    font-size: 0.875rem;
+    margin-bottom: var(--space-xs);
+    padding: var(--space-xs) var(--space-sm);
+    border-radius: var(--radius-sm);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    font-family: var(--font-display);
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.segment-speaker-select:hover {
+    border-color: rgba(255, 255, 255, 0.3);
+}
+
+.segment-speaker-select:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px rgba(127, 90, 240, 0.2);
+}
+
 .segment-time {
     font-family: var(--font-mono);
     font-size: 0.75rem;

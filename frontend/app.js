@@ -15,6 +15,7 @@ class Transkriptor {
         this.cacheElements();
         this.bindEvents();
         this.checkApiStatus();
+        this.loadFromStorage();
     }
 
     cacheElements() {
@@ -201,6 +202,7 @@ class Transkriptor {
         this.renderSpeakers();
         this.renderTranscript();
         this.updateStats();
+        this.saveToStorage();
     }
 
     renderSpeakers() {
@@ -238,6 +240,7 @@ class Transkriptor {
             input.addEventListener('change', (e) => {
                 this.speakerNames[speaker] = e.target.value || speaker;
                 this.updateSpeakerLabels(speaker);
+                this.saveToStorage();
             });
 
             this.speakerList.appendChild(item);
@@ -272,29 +275,55 @@ class Transkriptor {
             return;
         }
 
+        // Get all unique speakers for dropdown
+        const allSpeakers = Object.keys(this.speakerNames).sort();
+
         this.transcriptData.segments.forEach((seg, index) => {
             const speakerIndex = this.getSpeakerIndex(seg.speaker);
             const segment = document.createElement('div');
             segment.className = 'segment';
             segment.dataset.index = index;
 
+            // Build speaker dropdown options
+            let speakerOptions = '';
+            if (seg.speaker) {
+                speakerOptions = allSpeakers.map(spk =>
+                    `<option value="${spk}" ${spk === seg.speaker ? 'selected' : ''}>${this.speakerNames[spk] || spk}</option>`
+                ).join('');
+            }
+
             segment.innerHTML = `
                 <div class="segment-meta">
                     ${seg.speaker ? `
-                        <div class="segment-speaker speaker-${speakerIndex}" data-speaker="${seg.speaker}">
-                            ${this.speakerNames[seg.speaker] || seg.speaker}
-                        </div>
+                        <select class="segment-speaker-select speaker-${speakerIndex}" data-index="${index}">
+                            ${speakerOptions}
+                        </select>
                     ` : ''}
                     <div class="segment-time">${this.formatTime(seg.start)} → ${this.formatTime(seg.end)}</div>
                 </div>
                 <div class="segment-text" contenteditable="true" data-index="${index}">${seg.text}</div>
             `;
 
+            // Track speaker changes
+            if (seg.speaker) {
+                const speakerSelect = segment.querySelector('.segment-speaker-select');
+                speakerSelect.addEventListener('change', (e) => {
+                    const newSpeaker = e.target.value;
+                    this.transcriptData.segments[index].speaker = newSpeaker;
+                    // Update class for color
+                    const newSpeakerIndex = this.getSpeakerIndex(newSpeaker);
+                    speakerSelect.className = `segment-speaker-select speaker-${newSpeakerIndex}`;
+                    this.showToast(`Sprecher geändert zu ${this.speakerNames[newSpeaker]}`, 'success');
+                    this.saveToStorage();
+                });
+            }
+
             // Track text changes
             const textEl = segment.querySelector('.segment-text');
             textEl.addEventListener('blur', (e) => {
                 this.transcriptData.segments[index].text = e.target.textContent;
                 this.updateStats();
+                this.saveToStorage();
             });
 
             this.transcriptEditor.appendChild(segment);
@@ -480,6 +509,7 @@ class Transkriptor {
         this.transcriptData = null;
         this.speakerNames = {};
         this.fileInput.value = '';
+        this.clearStorage();
         this.showSection('upload');
     }
 
@@ -527,6 +557,52 @@ class Transkriptor {
         if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
         if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
         return (bytes / (1024 * 1024 * 1024)).toFixed(1) + ' GB';
+    }
+
+    // ============================================
+    // LocalStorage - Persistenz
+    // ============================================
+
+    saveToStorage() {
+        if (!this.transcriptData) return;
+
+        const dataToSave = {
+            transcriptData: this.transcriptData,
+            speakerNames: this.speakerNames,
+            timestamp: Date.now()
+        };
+
+        try {
+            localStorage.setItem('transcriptor_current', JSON.stringify(dataToSave));
+        } catch (e) {
+            console.error('Fehler beim Speichern:', e);
+            this.showToast('Speichern fehlgeschlagen', 'error');
+        }
+    }
+
+    loadFromStorage() {
+        try {
+            const saved = localStorage.getItem('transcriptor_current');
+            if (!saved) return;
+
+            const data = JSON.parse(saved);
+
+            // Prüfe ob Daten vorhanden und nicht zu alt (max. 7 Tage)
+            const maxAge = 7 * 24 * 60 * 60 * 1000; // 7 Tage
+            if (data.timestamp && (Date.now() - data.timestamp) < maxAge) {
+                this.transcriptData = data.transcriptData;
+                this.speakerNames = data.speakerNames || {};
+
+                this.showEditor();
+                this.showToast('Letzte Transkription wiederhergestellt', 'success');
+            }
+        } catch (e) {
+            console.error('Fehler beim Laden:', e);
+        }
+    }
+
+    clearStorage() {
+        localStorage.removeItem('transcriptor_current');
     }
 }
 
