@@ -1,0 +1,56 @@
+services:
+  # ============================================
+  # WhisperX ASR Backend mit Speaker Diarization
+  # ============================================
+  whisper-api:
+    image: onerahmet/openai-whisper-asr-webservice:latest-gpu
+    container_name: whisper-api
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+    environment:
+      # WhisperX Engine für Speaker Diarization
+      - ASR_ENGINE=whisperx
+      # Modell: tiny, base, small, medium, large-v3
+      - ASR_MODEL=large-v3
+      # Hugging Face Token für Diarization (ERFORDERLICH!)
+      - HF_TOKEN=${HF_TOKEN}
+    volumes:
+      # Model-Cache persistent speichern
+      - whisper_cache:/root/.cache
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+
+  # ============================================
+  # Frontend Web-UI mit Editor
+  # ============================================
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: transcriber-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on:
+      - whisper-api
+    environment:
+      - API_URL=http://whisper-api:9000
+
+volumes:
+  whisper_cache:
+
+networks:
+  default:
+    name: transcriber-network

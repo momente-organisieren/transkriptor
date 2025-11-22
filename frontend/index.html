@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Transkriptor – Lokale Spracherkennung</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="app-header">
+            <div class="logo">
+                <div class="logo-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
+                        <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                        <line x1="12" x2="12" y1="19" y2="22"/>
+                    </svg>
+                </div>
+                <h1>Transkriptor</h1>
+            </div>
+            <div class="header-status">
+                <span class="status-dot" id="apiStatus"></span>
+                <span class="status-text" id="apiStatusText">Verbinde...</span>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Upload Section -->
+            <section class="upload-section" id="uploadSection">
+                <div class="upload-zone" id="uploadZone">
+                    <div class="upload-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                            <polyline points="17,8 12,3 7,8"/>
+                            <line x1="12" x2="12" y1="3" y2="15"/>
+                        </svg>
+                    </div>
+                    <h2>Audio oder Video hochladen</h2>
+                    <p>Ziehe eine Datei hierher oder klicke zum Auswählen</p>
+                    <p class="upload-formats">MP3, WAV, M4A, MP4, MKV, WEBM und mehr</p>
+                    <input type="file" id="fileInput" accept="audio/*,video/*" hidden>
+                </div>
+
+                <!-- Options -->
+                <div class="options-panel">
+                    <div class="option-group">
+                        <label for="languageSelect">Sprache</label>
+                        <select id="languageSelect">
+                            <option value="">Automatisch erkennen</option>
+                            <option value="de">Deutsch</option>
+                            <option value="en">English</option>
+                            <option value="fr">Français</option>
+                            <option value="es">Español</option>
+                            <option value="it">Italiano</option>
+                            <option value="nl">Nederlands</option>
+                            <option value="pl">Polski</option>
+                            <option value="pt">Português</option>
+                            <option value="ru">Русский</option>
+                            <option value="ja">日本語</option>
+                            <option value="zh">中文</option>
+                            <option value="ko">한국어</option>
+                        </select>
+                    </div>
+                    <div class="option-group">
+                        <label for="maxSpeakers">Max. Sprecher</label>
+                        <select id="maxSpeakers">
+                            <option value="2">2</option>
+                            <option value="3">3</option>
+                            <option value="4">4</option>
+                            <option value="5" selected>5</option>
+                            <option value="8">8</option>
+                            <option value="10">10</option>
+                        </select>
+                    </div>
+                    <div class="option-group checkbox-group">
+                        <label>
+                            <input type="checkbox" id="diarizeCheck" checked>
+                            <span class="checkbox-custom"></span>
+                            Sprecher erkennen
+                        </label>
+                    </div>
+                    <div class="option-group checkbox-group">
+                        <label>
+                            <input type="checkbox" id="wordTimestamps">
+                            <span class="checkbox-custom"></span>
+                            Wort-Zeitstempel
+                        </label>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Progress Section -->
+            <section class="progress-section hidden" id="progressSection">
+                <div class="progress-content">
+                    <div class="progress-spinner">
+                        <svg viewBox="0 0 50 50">
+                            <circle cx="25" cy="25" r="20" fill="none" stroke-width="4"/>
+                        </svg>
+                    </div>
+                    <h2 id="progressTitle">Transkribiere...</h2>
+                    <p id="progressText">Dies kann je nach Dateigröße einige Minuten dauern</p>
+                    <div class="file-info">
+                        <span class="file-name" id="fileName"></span>
+                        <span class="file-size" id="fileSize"></span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Editor Section -->
+            <section class="editor-section hidden" id="editorSection">
+                <div class="editor-toolbar">
+                    <div class="toolbar-left">
+                        <button class="toolbar-btn" id="newTranscript" title="Neue Transkription">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 5v14M5 12h14"/>
+                            </svg>
+                            Neu
+                        </button>
+                    </div>
+                    <div class="toolbar-right">
+                        <div class="export-dropdown">
+                            <button class="toolbar-btn primary" id="exportBtn">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                    <polyline points="7,10 12,15 17,10"/>
+                                    <line x1="12" x2="12" y1="15" y2="3"/>
+                                </svg>
+                                Export
+                            </button>
+                            <div class="dropdown-menu" id="exportMenu">
+                                <button data-format="txt">Text (.txt)</button>
+                                <button data-format="srt">Untertitel (.srt)</button>
+                                <button data-format="vtt">WebVTT (.vtt)</button>
+                                <button data-format="json">JSON (.json)</button>
+                                <button data-format="docx">Word (.docx)</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Speaker Name Editor -->
+                <div class="speaker-panel" id="speakerPanel">
+                    <h3>Sprecher benennen</h3>
+                    <div class="speaker-list" id="speakerList"></div>
+                </div>
+
+                <!-- Transcript Editor -->
+                <div class="transcript-editor" id="transcriptEditor">
+                    <!-- Segments werden hier dynamisch eingefügt -->
+                </div>
+
+                <!-- Stats -->
+                <div class="transcript-stats">
+                    <span id="wordCount">0 Wörter</span>
+                    <span id="segmentCount">0 Segmente</span>
+                    <span id="duration">00:00:00</span>
+                </div>
+            </section>
+        </main>
+
+        <!-- Toast Notifications -->
+        <div class="toast-container" id="toastContainer"></div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
