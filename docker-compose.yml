@@ -17,6 +17,8 @@ services:
       # BEIDE Varianten setzen für Kompatibilität
       - HF_TOKEN=${HF_TOKEN}
       - HUGGINGFACE_TOKEN=${HF_TOKEN}
+      # Diarization Model (explizit für bessere Speaker-Erkennung)
+      - DIARIZATION_MODEL=pyannote/speaker-diarization-3.1
       # Debug-Modus für Troubleshooting
       - DEBUG=${DEBUG:-false}
     volumes:

@@ -29,6 +29,7 @@ class Transkriptor {
 
         // Options
         this.languageSelect = document.getElementById('languageSelect');
+        this.minSpeakers = document.getElementById('minSpeakers');
         this.maxSpeakers = document.getElementById('maxSpeakers');
         this.diarizeCheck = document.getElementById('diarizeCheck');
         this.wordTimestamps = document.getElementById('wordTimestamps');
@@ -160,7 +161,7 @@ class Transkriptor {
 
         if (this.diarizeCheck.checked) {
             params.set('diarize', 'true');
-            params.set('min_speakers', '1');
+            params.set('min_speakers', this.minSpeakers.value);
             params.set('max_speakers', this.maxSpeakers.value);
         }
 
