@@ -252,9 +252,15 @@ class Transkriptor {
     }
 
     updateSpeakerLabels(speakerId) {
-        const labels = this.transcriptEditor.querySelectorAll(`[data-speaker="${speakerId}"]`);
-        labels.forEach(label => {
-            label.textContent = this.speakerNames[speakerId];
+        // Update all dropdown options for this speaker
+        const allDropdowns = this.transcriptEditor.querySelectorAll('.segment-speaker-select');
+        allDropdowns.forEach(dropdown => {
+            const options = dropdown.querySelectorAll('option');
+            options.forEach(option => {
+                if (option.value === speakerId) {
+                    option.textContent = this.speakerNames[speakerId];
+                }
+            });
         });
     }
 
