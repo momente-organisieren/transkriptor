@@ -708,7 +708,9 @@ body::before {
     color: var(--text-primary);
     font-family: var(--font-display);
     font-size: 0.875rem;
-    width: 120px;
+    min-width: 120px;
+    max-width: 250px;
+    width: auto;
     padding: var(--space-xs);
     border-radius: var(--radius-sm);
 }
@@ -762,7 +764,9 @@ body::before {
 
 .segment-meta {
     flex-shrink: 0;
-    width: 140px;
+    min-width: 160px;
+    max-width: 280px;
+    width: auto;
 }
 
 .segment-speaker {
@@ -784,6 +788,12 @@ body::before {
     font-family: var(--font-display);
     cursor: pointer;
     transition: all 0.2s ease;
+    min-width: 140px;
+    max-width: 240px;
+    width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .segment-speaker-select:hover {

@@ -34,7 +34,10 @@ class AudioStorage {
     }
 
     async saveAudioFile(file) {
-        if (!this.db) await this.init();
+        if (!this.db) {
+            console.log('🔧 IndexedDB nicht initialisiert, initialisiere...');
+            await this.init();
+        }
 
         return new Promise((resolve, reject) => {
             const transaction = this.db.transaction(['audioFiles'], 'readwrite');
@@ -49,14 +52,25 @@ class AudioStorage {
                 timestamp: Date.now()
             };
 
+            console.log('💾 Schreibe in IndexedDB:', data.name, data.size, 'bytes');
+
             const request = store.put(data);
-            request.onsuccess = () => resolve();
-            request.onerror = () => reject(request.error);
+            request.onsuccess = () => {
+                console.log('✅ IndexedDB Speicherung erfolgreich');
+                resolve();
+            };
+            request.onerror = () => {
+                console.error('❌ IndexedDB Speicherung fehlgeschlagen:', request.error);
+                reject(request.error);
+            };
         });
     }
 
     async getAudioFile() {
-        if (!this.db) await this.init();
+        if (!this.db) {
+            console.log('🔧 IndexedDB nicht initialisiert, initialisiere...');
+            await this.init();
+        }
 
         return new Promise((resolve, reject) => {
             const transaction = this.db.transaction(['audioFiles'], 'readonly');
@@ -65,20 +79,31 @@ class AudioStorage {
 
             request.onsuccess = () => {
                 const data = request.result;
+                console.log('📂 IndexedDB Abfrage Ergebnis:', data);
+
                 if (data && data.file) {
                     // Prüfe Alter (max 7 Tage)
                     const maxAge = 7 * 24 * 60 * 60 * 1000;
-                    if (Date.now() - data.timestamp < maxAge) {
+                    const age = Date.now() - data.timestamp;
+                    console.log('⏱️ Datei-Alter:', Math.floor(age / 1000 / 60 / 60), 'Stunden');
+
+                    if (age < maxAge) {
+                        console.log('✅ Audio-Datei gefunden und gültig:', data.name, data.size, 'bytes');
                         resolve(data.file);
                     } else {
+                        console.warn('⚠️ Audio-Datei zu alt, lösche...');
                         this.deleteAudioFile();
                         resolve(null);
                     }
                 } else {
+                    console.warn('⚠️ Keine Audio-Datei in IndexedDB');
                     resolve(null);
                 }
             };
-            request.onerror = () => reject(request.error);
+            request.onerror = () => {
+                console.error('❌ IndexedDB Abfrage fehlgeschlagen:', request.error);
+                reject(request.error);
+            };
         });
     }
 
@@ -446,7 +471,7 @@ class Transkriptor {
             segment.innerHTML = `
                 <div class="segment-meta">
                     ${seg.speaker ? `
-                        <select class="segment-speaker-select speaker-${speakerIndex}" data-index="${index}">
+                        <select class="segment-speaker-select speaker-${speakerIndex}" data-index="${index}" title="${this.speakerNames[seg.speaker] || seg.speaker}">
                             ${speakerOptions}
                         </select>
                     ` : ''}
@@ -803,8 +828,9 @@ class Transkriptor {
         // Transkript-Daten in localStorage speichern (ohne Audio)
         try {
             localStorage.setItem('transcriptor_current', JSON.stringify(dataToSave));
+            console.log('✅ Transkript in localStorage gespeichert');
         } catch (e) {
-            console.error('Fehler beim Speichern:', e);
+            console.error('❌ Fehler beim Speichern:', e);
             this.showToast('Speichern fehlgeschlagen', 'error');
             return;
         }
@@ -812,44 +838,59 @@ class Transkriptor {
         // Audio-Datei separat in IndexedDB speichern (für große Dateien)
         if (this.audioFile) {
             try {
+                console.log('💾 Speichere Audio in IndexedDB:', this.audioFile.name, this.audioFile.size, 'bytes');
                 await this.audioStorage.saveAudioFile(this.audioFile);
+                console.log('✅ Audio in IndexedDB gespeichert');
             } catch (e) {
-                console.warn('Audio konnte nicht in IndexedDB gespeichert werden:', e);
+                console.error('❌ Audio konnte nicht in IndexedDB gespeichert werden:', e);
                 // Nicht kritisch - Transkript ist trotzdem gespeichert
             }
+        } else {
+            console.warn('⚠️ Keine Audio-Datei zum Speichern vorhanden');
         }
     }
 
     async loadFromStorage() {
         try {
             const saved = localStorage.getItem('transcriptor_current');
-            if (!saved) return;
+            if (!saved) {
+                console.log('ℹ️ Keine gespeicherten Daten gefunden');
+                return;
+            }
 
             const data = JSON.parse(saved);
+            console.log('📂 localStorage Daten gefunden:', data);
 
             // Prüfe ob Daten vorhanden und nicht zu alt (max. 7 Tage)
             const maxAge = 7 * 24 * 60 * 60 * 1000; // 7 Tage
             if (data.timestamp && (Date.now() - data.timestamp) < maxAge) {
                 this.transcriptData = data.transcriptData;
                 this.speakerNames = data.speakerNames || {};
+                console.log('✅ Transkript-Daten geladen');
 
                 // Audio aus IndexedDB wiederherstellen
                 try {
+                    console.log('🔍 Suche Audio in IndexedDB...');
                     const audioFile = await this.audioStorage.getAudioFile();
                     if (audioFile) {
                         this.audioFile = audioFile;
                         this.audioBlob = URL.createObjectURL(audioFile);
+                        console.log('✅ Audio aus IndexedDB geladen:', audioFile.name, audioFile.size, 'bytes');
+                    } else {
+                        console.warn('⚠️ Keine Audio-Datei in IndexedDB gefunden');
                     }
                 } catch (e) {
-                    console.warn('Audio konnte nicht geladen werden:', e);
+                    console.error('❌ Audio konnte nicht geladen werden:', e);
                     // Nicht kritisch - Transkript wird trotzdem angezeigt
                 }
 
                 this.showEditor();
                 this.showToast('Letzte Transkription wiederhergestellt', 'success');
+            } else {
+                console.warn('⚠️ Gespeicherte Daten sind zu alt (>7 Tage)');
             }
         } catch (e) {
-            console.error('Fehler beim Laden:', e);
+            console.error('❌ Fehler beim Laden:', e);
         }
     }
 
