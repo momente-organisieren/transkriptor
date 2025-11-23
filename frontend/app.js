@@ -177,6 +177,7 @@ class Transkriptor {
 
         // Editor
         this.speakerList = document.getElementById('speakerList');
+        this.addSpeakerBtn = document.getElementById('addSpeakerBtn');
         this.transcriptEditor = document.getElementById('transcriptEditor');
         this.exportBtn = document.getElementById('exportBtn');
         this.exportMenu = document.getElementById('exportMenu');
@@ -248,6 +249,9 @@ class Transkriptor {
 
         // New Transcript
         this.newTranscriptBtn.addEventListener('click', () => this.resetToUpload());
+
+        // Add Speaker
+        this.addSpeakerBtn.addEventListener('click', () => this.addNewSpeaker());
 
         // Audio Player Events
         this.audioPlayBtn.addEventListener('click', () => this.toggleAudioPlayback());
@@ -419,6 +423,82 @@ class Transkriptor {
         // Hide speaker panel if no diarization
         const speakerPanel = document.getElementById('speakerPanel');
         speakerPanel.style.display = speakers.size > 0 ? 'block' : 'none';
+    }
+
+    addNewSpeaker() {
+        // Finde die höchste SPEAKER_XX Nummer
+        const existingSpeakers = Object.keys(this.speakerNames);
+        let maxNumber = -1;
+
+        existingSpeakers.forEach(speaker => {
+            const match = speaker.match(/^SPEAKER_(\d+)$/);
+            if (match) {
+                const num = parseInt(match[1]);
+                if (num > maxNumber) maxNumber = num;
+            }
+        });
+
+        // Erstelle neuen Sprecher mit nächster Nummer
+        const newSpeakerId = `SPEAKER_${String(maxNumber + 1).padStart(2, '0')}`;
+        this.speakerNames[newSpeakerId] = newSpeakerId;
+
+        // Berechne Index für Farbe
+        const speakerIndex = Object.keys(this.speakerNames).sort().indexOf(newSpeakerId);
+
+        // Erstelle neues Speaker-Item
+        const item = document.createElement('div');
+        item.className = 'speaker-item';
+        item.innerHTML = `
+            <div class="speaker-color" style="background: var(--speaker-${speakerIndex % 8})"></div>
+            <input type="text"
+                   value="${newSpeakerId}"
+                   data-speaker="${newSpeakerId}"
+                   placeholder="${newSpeakerId}">
+        `;
+
+        const input = item.querySelector('input');
+        input.addEventListener('change', (e) => {
+            this.speakerNames[newSpeakerId] = e.target.value || newSpeakerId;
+            this.updateSpeakerLabels(newSpeakerId);
+            this.saveToStorage();
+        });
+
+        // Füge zum DOM hinzu
+        this.speakerList.appendChild(item);
+
+        // Update alle Dropdown-Menüs
+        this.updateAllDropdownOptions();
+
+        // Speichern
+        this.saveToStorage();
+
+        this.showToast(`Sprecher ${newSpeakerId} hinzugefügt`, 'success');
+
+        // Fokus auf neues Input-Feld
+        input.focus();
+        input.select();
+    }
+
+    updateAllDropdownOptions() {
+        // Aktualisiere alle Dropdowns mit der neuen Sprecher-Liste
+        const allSpeakers = Object.keys(this.speakerNames).sort();
+        const allDropdowns = this.transcriptEditor.querySelectorAll('.segment-speaker-select');
+
+        allDropdowns.forEach(dropdown => {
+            const currentValue = dropdown.value;
+
+            // Lösche alte Optionen
+            dropdown.innerHTML = '';
+
+            // Füge alle Sprecher als Optionen hinzu
+            allSpeakers.forEach(spk => {
+                const option = document.createElement('option');
+                option.value = spk;
+                option.textContent = this.speakerNames[spk] || spk;
+                option.selected = (spk === currentValue);
+                dropdown.appendChild(option);
+            });
+        });
     }
 
     updateSpeakerLabels(speakerId) {
