@@ -8,7 +8,7 @@
 class AudioStorage {
     constructor() {
         this.dbName = 'TranscriptorDB';
-        this.version = 1;
+        this.version = 2; // Version erhöht für transcriptData Store
         this.db = null;
     }
 
@@ -28,6 +28,11 @@ class AudioStorage {
                 // Store für Audio-Dateien
                 if (!db.objectStoreNames.contains('audioFiles')) {
                     db.createObjectStore('audioFiles', { keyPath: 'id' });
+                }
+
+                // Store für Transkriptionsdaten (neu in Version 2)
+                if (!db.objectStoreNames.contains('transcriptData')) {
+                    db.createObjectStore('transcriptData', { keyPath: 'id' });
                 }
             };
         });
@@ -116,6 +121,96 @@ class AudioStorage {
             const request = store.delete('current');
 
             request.onsuccess = () => resolve();
+            request.onerror = () => reject(request.error);
+        });
+    }
+
+    async saveTranscriptData(data) {
+        if (!this.db) {
+            console.log('🔧 IndexedDB nicht initialisiert, initialisiere...');
+            await this.init();
+        }
+
+        return new Promise((resolve, reject) => {
+            const transaction = this.db.transaction(['transcriptData'], 'readwrite');
+            const store = transaction.objectStore('transcriptData');
+
+            const dataToStore = {
+                id: 'current',
+                transcriptData: data.transcriptData,
+                speakerNames: data.speakerNames,
+                summaries: data.summaries,
+                transcriptionStats: data.transcriptionStats,
+                timestamp: Date.now()
+            };
+
+            console.log('💾 Schreibe Transkriptionsdaten in IndexedDB');
+
+            const request = store.put(dataToStore);
+            request.onsuccess = () => {
+                console.log('✅ Transkriptionsdaten in IndexedDB gespeichert');
+                resolve();
+            };
+            request.onerror = () => {
+                console.error('❌ IndexedDB Speicherung fehlgeschlagen:', request.error);
+                reject(request.error);
+            };
+        });
+    }
+
+    async getTranscriptData() {
+        if (!this.db) {
+            console.log('🔧 IndexedDB nicht initialisiert, initialisiere...');
+            await this.init();
+        }
+
+        return new Promise((resolve, reject) => {
+            const transaction = this.db.transaction(['transcriptData'], 'readonly');
+            const store = transaction.objectStore('transcriptData');
+            const request = store.get('current');
+
+            request.onsuccess = () => {
+                const data = request.result;
+                console.log('📂 Transkriptionsdaten aus IndexedDB geladen:', !!data);
+
+                if (data) {
+                    // Prüfe Alter (max 7 Tage)
+                    const maxAge = 7 * 24 * 60 * 60 * 1000;
+                    const age = Date.now() - data.timestamp;
+                    console.log('⏱️ Daten-Alter:', Math.floor(age / 1000 / 60 / 60), 'Stunden');
+
+                    if (age < maxAge) {
+                        console.log('✅ Transkriptionsdaten gültig');
+                        resolve(data);
+                    } else {
+                        console.warn('⚠️ Transkriptionsdaten zu alt, lösche...');
+                        this.deleteTranscriptData();
+                        resolve(null);
+                    }
+                } else {
+                    console.warn('⚠️ Keine Transkriptionsdaten in IndexedDB');
+                    resolve(null);
+                }
+            };
+            request.onerror = () => {
+                console.error('❌ IndexedDB Abfrage fehlgeschlagen:', request.error);
+                reject(request.error);
+            };
+        });
+    }
+
+    async deleteTranscriptData() {
+        if (!this.db) await this.init();
+
+        return new Promise((resolve, reject) => {
+            const transaction = this.db.transaction(['transcriptData'], 'readwrite');
+            const store = transaction.objectStore('transcriptData');
+            const request = store.delete('current');
+
+            request.onsuccess = () => {
+                console.log('🗑️ Transkriptionsdaten aus IndexedDB gelöscht');
+                resolve();
+            };
             request.onerror = () => reject(request.error);
         });
     }
@@ -1333,22 +1428,36 @@ class Transkriptor {
     async saveToStorage() {
         if (!this.transcriptData) return;
 
-        const dataToSave = {
+        // Große Daten in IndexedDB speichern
+        const transcriptDataToSave = {
             transcriptData: this.transcriptData,
             speakerNames: this.speakerNames,
             summaries: this.summaryManager.summaries || {},
-            transcriptionStats: this.transcriptionStats || null,
-            timestamp: Date.now()
+            transcriptionStats: this.transcriptionStats || null
         };
 
-        // Transkript-Daten in localStorage speichern (ohne Audio)
         try {
-            localStorage.setItem('transcriptor_current', JSON.stringify(dataToSave));
-            console.log('✅ Transkript in localStorage gespeichert');
+            console.log('💾 Speichere Transkriptionsdaten in IndexedDB...');
+            await this.audioStorage.saveTranscriptData(transcriptDataToSave);
+            console.log('✅ Transkriptionsdaten in IndexedDB gespeichert');
         } catch (e) {
-            console.error('❌ Fehler beim Speichern:', e);
+            console.error('❌ Fehler beim Speichern in IndexedDB:', e);
             this.showToast('Speichern fehlgeschlagen', 'error');
             return;
+        }
+
+        // Nur kleine Metadaten in localStorage (für schnellen Check)
+        try {
+            const metadata = {
+                hasData: true,
+                timestamp: Date.now(),
+                fileName: this.audioFile ? this.audioFile.name : null
+            };
+            localStorage.setItem('transcriptor_metadata', JSON.stringify(metadata));
+            console.log('✅ Metadaten in localStorage gespeichert');
+        } catch (e) {
+            console.error('❌ Fehler beim Speichern der Metadaten:', e);
+            // Nicht kritisch - Daten sind in IndexedDB
         }
 
         // Audio-Datei separat in IndexedDB speichern (für große Dateien)
@@ -1368,92 +1477,124 @@ class Transkriptor {
 
     async loadFromStorage() {
         try {
-            const saved = localStorage.getItem('transcriptor_current');
-            if (!saved) {
-                console.log('ℹ️ Keine gespeicherten Daten gefunden');
+            // Prüfe zunächst Metadaten in localStorage
+            const metadata = localStorage.getItem('transcriptor_metadata');
+            if (!metadata) {
+                // Fallback: Prüfe altes Format
+                const oldData = localStorage.getItem('transcriptor_current');
+                if (oldData) {
+                    console.log('ℹ️ Alte Daten gefunden, migriere zu IndexedDB...');
+                    // Migration durchführen
+                    const data = JSON.parse(oldData);
+                    await this.audioStorage.saveTranscriptData({
+                        transcriptData: data.transcriptData,
+                        speakerNames: data.speakerNames,
+                        summaries: data.summaries || {},
+                        transcriptionStats: data.transcriptionStats || null
+                    });
+                    localStorage.removeItem('transcriptor_current');
+                    localStorage.setItem('transcriptor_metadata', JSON.stringify({
+                        hasData: true,
+                        timestamp: data.timestamp || Date.now(),
+                        fileName: null
+                    }));
+                    console.log('✅ Migration zu IndexedDB abgeschlossen');
+                } else {
+                    console.log('ℹ️ Keine gespeicherten Daten gefunden');
+                    return;
+                }
+            }
+
+            // Lade Transkriptionsdaten aus IndexedDB
+            console.log('🔍 Lade Transkriptionsdaten aus IndexedDB...');
+            const data = await this.audioStorage.getTranscriptData();
+
+            if (!data) {
+                console.log('ℹ️ Keine Transkriptionsdaten in IndexedDB gefunden');
                 return;
             }
 
-            const data = JSON.parse(saved);
-            console.log('📂 localStorage Daten gefunden:', data);
+            console.log('📂 Transkriptionsdaten aus IndexedDB geladen');
 
-            // Prüfe ob Daten vorhanden und nicht zu alt (max. 7 Tage)
-            const maxAge = 7 * 24 * 60 * 60 * 1000; // 7 Tage
-            if (data.timestamp && (Date.now() - data.timestamp) < maxAge) {
-                this.transcriptData = data.transcriptData;
-                this.speakerNames = data.speakerNames || {};
-                this.transcriptionStats = data.transcriptionStats || null;
-                console.log('✅ Transkript-Daten geladen');
+            // Daten wiederherstellen
+            this.transcriptData = data.transcriptData;
+            this.speakerNames = data.speakerNames || {};
+            this.transcriptionStats = data.transcriptionStats || null;
+            console.log('✅ Transkript-Daten geladen');
 
-                if (this.transcriptionStats) {
-                    console.log('📊 Performance-Stats geladen:', {
-                        fileSize: this.formatFileSize(this.transcriptionStats.fileSize),
-                        audioDuration: this.formatDuration(this.transcriptionStats.audioDuration),
-                        transcriptionTime: this.formatDuration(this.transcriptionStats.transcriptionTime),
-                        factor: this.transcriptionStats.realTimeFactor.toFixed(1) + 'x'
-                    });
-                }
-
-                // Zusammenfassungen wiederherstellen
-                if (data.summaries && Object.keys(data.summaries).length > 0) {
-                    // Neues Format: Mehrere Summaries
-                    this.summaryManager.summaries = data.summaries;
-                    console.log('✅ Zusammenfassungen geladen:', Object.keys(data.summaries).join(', '));
-                } else if (data.summary) {
-                    // Altes Format: Einzelne Summary (Rückwärtskompatibilität)
-                    this.summaryManager.summaries[data.summary.type] = data.summary;
-                    console.log('✅ Zusammenfassung geladen (alt):', data.summary.type);
-                }
-
-                // Audio aus IndexedDB wiederherstellen
-                try {
-                    console.log('🔍 Suche Audio in IndexedDB...');
-                    const audioFile = await this.audioStorage.getAudioFile();
-                    if (audioFile) {
-                        this.audioFile = audioFile;
-                        this.audioBlob = URL.createObjectURL(audioFile);
-                        console.log('✅ Audio aus IndexedDB geladen:', audioFile.name, audioFile.size, 'bytes');
-                    } else {
-                        console.warn('⚠️ Keine Audio-Datei in IndexedDB gefunden');
-                    }
-                } catch (e) {
-                    console.error('❌ Audio konnte nicht geladen werden:', e);
-                    // Nicht kritisch - Transkript wird trotzdem angezeigt
-                }
-
-                this.showEditor();
-
-                // Zusammenfassung im UI anzeigen (falls vorhanden)
-                // Zeige die erste verfügbare Zusammenfassung oder die vom aktuellen Typ
-                const currentType = this.summaryType.value || 'short';
-                if (this.summaryManager.summaries[currentType]) {
-                    this.summaryManager.switchSummaryType(currentType);
-                } else {
-                    // Zeige erste verfügbare Zusammenfassung
-                    const firstType = Object.keys(this.summaryManager.summaries)[0];
-                    if (firstType) {
-                        this.summaryType.value = firstType;
-                        this.summaryManager.switchSummaryType(firstType);
-                    }
-                }
-
-                this.showToast('Letzte Transkription wiederhergestellt', 'success');
-            } else {
-                console.warn('⚠️ Gespeicherte Daten sind zu alt (>7 Tage)');
+            if (this.transcriptionStats) {
+                console.log('📊 Performance-Stats geladen:', {
+                    fileSize: this.formatFileSize(this.transcriptionStats.fileSize),
+                    audioDuration: this.formatDuration(this.transcriptionStats.audioDuration),
+                    transcriptionTime: this.formatDuration(this.transcriptionStats.transcriptionTime),
+                    factor: this.transcriptionStats.realTimeFactor.toFixed(1) + 'x'
+                });
             }
+
+            // Zusammenfassungen wiederherstellen
+            if (data.summaries && Object.keys(data.summaries).length > 0) {
+                // Neues Format: Mehrere Summaries
+                this.summaryManager.summaries = data.summaries;
+                console.log('✅ Zusammenfassungen geladen:', Object.keys(data.summaries).join(', '));
+            }
+
+            // Audio aus IndexedDB wiederherstellen
+            try {
+                console.log('🔍 Suche Audio in IndexedDB...');
+                const audioFile = await this.audioStorage.getAudioFile();
+                if (audioFile) {
+                    this.audioFile = audioFile;
+                    this.audioBlob = URL.createObjectURL(audioFile);
+                    console.log('✅ Audio aus IndexedDB geladen:', audioFile.name, audioFile.size, 'bytes');
+                } else {
+                    console.warn('⚠️ Keine Audio-Datei in IndexedDB gefunden');
+                }
+            } catch (e) {
+                console.error('❌ Audio konnte nicht geladen werden:', e);
+                // Nicht kritisch - Transkript wird trotzdem angezeigt
+            }
+
+            this.showEditor();
+
+            // Zusammenfassung im UI anzeigen (falls vorhanden)
+            // Zeige die erste verfügbare Zusammenfassung oder die vom aktuellen Typ
+            const currentType = this.summaryType.value || 'short';
+            if (this.summaryManager.summaries[currentType]) {
+                this.summaryManager.switchSummaryType(currentType);
+            } else {
+                // Zeige erste verfügbare Zusammenfassung
+                const firstType = Object.keys(this.summaryManager.summaries)[0];
+                if (firstType) {
+                    this.summaryType.value = firstType;
+                    this.summaryManager.switchSummaryType(firstType);
+                }
+            }
+
+            this.showToast('Letzte Transkription wiederhergestellt', 'success');
         } catch (e) {
             console.error('❌ Fehler beim Laden:', e);
         }
     }
 
     async clearStorage() {
+        // Alte localStorage Einträge löschen
         localStorage.removeItem('transcriptor_current');
+        localStorage.removeItem('transcriptor_metadata');
+
+        // Transkriptionsdaten aus IndexedDB löschen
+        try {
+            await this.audioStorage.deleteTranscriptData();
+            console.log('✅ Transkriptionsdaten aus IndexedDB gelöscht');
+        } catch (e) {
+            console.warn('⚠️ Fehler beim Löschen der Transkriptionsdaten:', e);
+        }
 
         // Audio aus IndexedDB löschen
         try {
             await this.audioStorage.deleteAudioFile();
+            console.log('✅ Audio aus IndexedDB gelöscht');
         } catch (e) {
-            console.warn('Fehler beim Löschen der Audio-Datei:', e);
+            console.warn('⚠️ Fehler beim Löschen der Audio-Datei:', e);
         }
     }
 
