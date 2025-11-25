@@ -141,7 +141,7 @@ class SummaryManager {
         this.transkriptor = transkriptor;
         this.ollamaUrl = '/ollama';
         this.currentSummary = null;
-        this.model = 'llama3.1:8b';
+        this.model = 'qwen2.5:7b';
     }
 
     async generateSummary(type) {
@@ -159,6 +159,10 @@ class SummaryManager {
             this.currentSummary = { type, text: summary };
             this.showSummary(summary);
             this.transkriptor.showToast('Zusammenfassung erstellt', 'success');
+
+            // Auto-Save der Zusammenfassung
+            await this.transkriptor.saveToStorage();
+            console.log('✅ Zusammenfassung gespeichert');
         } catch (error) {
             console.error('Summary generation error:', error);
             this.transkriptor.showToast(`Fehler: ${error.message}`, 'error');
@@ -436,6 +440,13 @@ class Transkriptor {
         this.copySummaryBtn = document.getElementById('copySummaryBtn');
         this.exportSummaryBtn = document.getElementById('exportSummaryBtn');
         this.regenerateSummaryBtn = document.getElementById('regenerateSummaryBtn');
+
+        // Tabs
+        this.tabButtons = document.querySelectorAll('.tab-btn');
+        this.tabPanes = {
+            transcript: document.getElementById('transcriptTab'),
+            summary: document.getElementById('summaryTab')
+        };
     }
 
     bindEvents() {
@@ -531,6 +542,35 @@ class Transkriptor {
             const type = this.summaryType.value;
             this.summaryManager.generateSummary(type);
         });
+
+        // Tab Switching Events
+        this.tabButtons.forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const tabName = e.currentTarget.dataset.tab;
+                this.switchTab(tabName);
+            });
+        });
+    }
+
+    switchTab(tabName) {
+        // Remove active class from all buttons
+        this.tabButtons.forEach(btn => btn.classList.remove('active'));
+
+        // Add active class to clicked button
+        const activeBtn = Array.from(this.tabButtons).find(btn => btn.dataset.tab === tabName);
+        if (activeBtn) activeBtn.classList.add('active');
+
+        // Hide all panes
+        Object.values(this.tabPanes).forEach(pane => {
+            pane.classList.remove('active');
+            pane.classList.add('hidden');
+        });
+
+        // Show selected pane
+        if (this.tabPanes[tabName]) {
+            this.tabPanes[tabName].classList.remove('hidden');
+            this.tabPanes[tabName].classList.add('active');
+        }
     }
 
     async checkApiStatus() {
@@ -1183,6 +1223,7 @@ class Transkriptor {
         const dataToSave = {
             transcriptData: this.transcriptData,
             speakerNames: this.speakerNames,
+            summary: this.summaryManager.currentSummary || null,
             timestamp: Date.now()
         };
 
@@ -1229,6 +1270,12 @@ class Transkriptor {
                 this.speakerNames = data.speakerNames || {};
                 console.log('✅ Transkript-Daten geladen');
 
+                // Zusammenfassung wiederherstellen
+                if (data.summary) {
+                    this.summaryManager.currentSummary = data.summary;
+                    console.log('✅ Zusammenfassung geladen:', data.summary.type);
+                }
+
                 // Audio aus IndexedDB wiederherstellen
                 try {
                     console.log('🔍 Suche Audio in IndexedDB...');
@@ -1246,6 +1293,12 @@ class Transkriptor {
                 }
 
                 this.showEditor();
+
+                // Zusammenfassung im UI anzeigen (falls vorhanden)
+                if (data.summary && data.summary.text) {
+                    this.summaryManager.showSummary(data.summary.text);
+                }
+
                 this.showToast('Letzte Transkription wiederhergestellt', 'success');
             } else {
                 console.warn('⚠️ Gespeicherte Daten sind zu alt (>7 Tage)');

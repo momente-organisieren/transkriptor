@@ -897,6 +897,85 @@ body::before {
 .speaker-6 { background: rgba(114, 117, 126, 0.2); color: var(--speaker-6); }
 .speaker-7 { background: rgba(238, 187, 195, 0.2); color: var(--speaker-7); }
 
+/* ============================================
+   Editor Tabs
+   ============================================ */
+
+.editor-tabs {
+    display: flex;
+    gap: var(--space-xs);
+    padding: 0 var(--space-lg);
+    background: var(--bg-primary);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.tab-btn {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    padding: var(--space-md) var(--space-lg);
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--text-muted);
+    font-family: var(--font-display);
+    font-size: 0.95rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    position: relative;
+}
+
+.tab-btn svg {
+    width: 18px;
+    height: 18px;
+    opacity: 0.6;
+    transition: opacity 0.2s ease;
+}
+
+.tab-btn:hover {
+    color: var(--text-secondary);
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.tab-btn:hover svg {
+    opacity: 0.8;
+}
+
+.tab-btn.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+}
+
+.tab-btn.active svg {
+    opacity: 1;
+}
+
+/* Tab Content */
+.tab-content {
+    position: relative;
+}
+
+.tab-pane {
+    display: none;
+}
+
+.tab-pane.active {
+    display: block;
+    animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
 /* Transcript Stats */
 .transcript-stats {
     display: flex;
@@ -1219,6 +1298,16 @@ body::before {
     border-radius: var(--radius-lg);
     margin: var(--space-lg);
     overflow: hidden;
+    min-height: 400px;
+}
+
+/* Summary Panel in Tab (Full Width) */
+#summaryTab .summary-panel {
+    margin: 0;
+    border-radius: 0;
+    border: none;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+    min-height: calc(100vh - 400px);
 }
 
 .summary-panel-header {
