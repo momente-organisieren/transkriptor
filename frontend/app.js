@@ -133,6 +133,255 @@ class AudioStorage {
     }
 }
 
+// ============================================
+// Summary Manager - für KI-Zusammenfassungen
+// ============================================
+class SummaryManager {
+    constructor(transkriptor) {
+        this.transkriptor = transkriptor;
+        this.ollamaUrl = '/ollama';
+        this.summaries = {}; // Objekt mit allen generierten Zusammenfassungen { short: {...}, structured: {...}, etc. }
+        this.currentType = 'short'; // Aktuell angezeigter Typ
+        this.model = 'qwen2.5:7b';
+    }
+
+    async generateSummary(type) {
+        const transcriptText = this.getTranscriptText();
+        if (!transcriptText) {
+            this.transkriptor.showToast('Kein Transkript verfügbar', 'error');
+            return;
+        }
+
+        const prompt = this.buildPrompt(type, transcriptText);
+
+        try {
+            this.showLoading();
+            const summary = await this.streamFromOllama(prompt);
+
+            // Speichere Summary im Objekt nach Typ
+            this.summaries[type] = {
+                type,
+                text: summary,
+                timestamp: Date.now()
+            };
+            this.currentType = type;
+
+            this.showSummary(summary);
+            this.transkriptor.showToast('Zusammenfassung erstellt', 'success');
+
+            // Auto-Save aller Zusammenfassungen
+            await this.transkriptor.saveToStorage();
+            console.log('✅ Zusammenfassung gespeichert:', type);
+        } catch (error) {
+            console.error('Summary generation error:', error);
+            this.transkriptor.showToast(`Fehler: ${error.message}`, 'error');
+            this.showPlaceholder();
+        }
+    }
+
+    getTranscriptText() {
+        if (!this.transkriptor.transcriptData) return null;
+
+        if (this.transkriptor.transcriptData.segments) {
+            return this.transkriptor.transcriptData.segments.map(seg => {
+                const speaker = seg.speaker ?
+                    `[${this.transkriptor.speakerNames[seg.speaker] || seg.speaker}] ` : '';
+                const time = this.transkriptor.formatTime(seg.start);
+                return `[${time}] ${speaker}${seg.text}`;
+            }).join('\n\n');
+        }
+
+        return this.transkriptor.transcriptData.text || '';
+    }
+
+    buildPrompt(type, transcriptText) {
+        const prompts = {
+            short: `Du bist ein professioneller Transkript-Zusammenfasser. Erstelle eine präzise Zusammenfassung des folgenden Transkripts in genau 3-5 Sätzen. Konzentriere dich auf die Hauptthemen und wichtigsten Erkenntnisse.
+
+Transkript:
+${transcriptText}
+
+Gib nur die Zusammenfassung aus, ohne zusätzliche Kommentare.`,
+
+            structured: `Analysiere das folgende Transkript und erstelle eine strukturierte Zusammenfassung in diesem Format:
+
+## Hauptthema
+[Ein Satz, der das Gesamtthema beschreibt]
+
+## Kernpunkte
+- [Erster Hauptpunkt]
+- [Zweiter Hauptpunkt]
+- [Dritter Hauptpunkt]
+
+## Fazit
+[Ein Satz, der das Ergebnis oder die Schlussfolgerung zusammenfasst]
+
+Transkript:
+${transcriptText}`,
+
+            timeline: `Erstelle eine chronologische Zusammenfassung dieses Transkripts mit Zeitstempeln. Für jedes wichtige Thema oder Ereignis, gib den Zeitstempel an, wann es beginnt.
+
+Format:
+[MM:SS] Beschreibung des Themas/Ereignisses
+
+Transkript mit Zeitstempeln:
+${transcriptText}
+
+Gib eine chronologische Zusammenfassung mit den wichtigsten Momenten und deren Zeitstempeln aus.`,
+
+            actions: `Extrahiere alle Aufgaben und Action Items aus dem folgenden Transkript. Formatiere sie als Checkliste.
+
+Transkript:
+${transcriptText}
+
+Liste alle Action Items in diesem Format auf:
+- [ ] Aufgabe mit verantwortlicher Person (falls erwähnt)
+
+Konzentriere dich nur auf konkrete, umsetzbare Aufgaben. Falls keine Action Items vorhanden sind, antworte mit "Keine Action Items identifiziert."`,
+
+            tags: `Analysiere das folgende Transkript und extrahiere die wichtigsten Schlagworte und Themen. Erstelle eine Liste von relevanten Tags, die den Inhalt gut beschreiben.
+
+Transkript:
+${transcriptText}
+
+Gib die Tags in diesem Format aus (sortiert nach Relevanz, maximal 10-15 Tags):
+#Tag1 #Tag2 #Tag3 #Tag4 #Tag5
+
+Konzentriere dich auf konkrete Themen, Fachbegriffe, Personen, Orte und zentrale Konzepte. Gib nur die Tags aus, ohne zusätzliche Erklärungen.`
+        };
+
+        return prompts[type] || prompts.short;
+    }
+
+    async streamFromOllama(prompt) {
+        const response = await fetch(`${this.ollamaUrl}/api/generate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                model: this.model,
+                prompt: prompt,
+                stream: true,
+                options: {
+                    temperature: 0.7,
+                    num_predict: 1000
+                }
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error(`API Fehler: ${response.status}`);
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let summary = '';
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            const chunk = decoder.decode(value);
+            const lines = chunk.split('\n').filter(line => line.trim());
+
+            for (const line of lines) {
+                try {
+                    const json = JSON.parse(line);
+                    if (json.response) {
+                        summary += json.response;
+                        this.updateSummaryDisplay(summary);
+                    }
+                } catch (e) {
+                    console.warn('Failed to parse JSON line:', line);
+                }
+            }
+        }
+
+        return summary;
+    }
+
+    showLoading() {
+        const placeholder = document.getElementById('summaryPlaceholder');
+        const loading = document.getElementById('summaryLoading');
+        const text = document.getElementById('summaryText');
+        const actions = document.getElementById('summaryActions');
+
+        placeholder.classList.add('hidden');
+        loading.classList.remove('hidden');
+        text.classList.add('hidden');
+        actions.classList.add('hidden');
+    }
+
+    showPlaceholder() {
+        const placeholder = document.getElementById('summaryPlaceholder');
+        const loading = document.getElementById('summaryLoading');
+        const text = document.getElementById('summaryText');
+        const actions = document.getElementById('summaryActions');
+
+        placeholder.classList.remove('hidden');
+        loading.classList.add('hidden');
+        text.classList.add('hidden');
+        actions.classList.add('hidden');
+    }
+
+    updateSummaryDisplay(summary) {
+        const loading = document.getElementById('summaryLoading');
+        const text = document.getElementById('summaryText');
+
+        loading.classList.add('hidden');
+        text.classList.remove('hidden');
+        text.textContent = summary;
+    }
+
+    showSummary(summary) {
+        const placeholder = document.getElementById('summaryPlaceholder');
+        const loading = document.getElementById('summaryLoading');
+        const text = document.getElementById('summaryText');
+        const actions = document.getElementById('summaryActions');
+
+        placeholder.classList.add('hidden');
+        loading.classList.add('hidden');
+        text.classList.remove('hidden');
+        text.textContent = summary;
+        actions.classList.remove('hidden');
+    }
+
+    // Wechsle zu einem anderen Summary-Typ (zeige gespeicherte Summary an, falls vorhanden)
+    switchSummaryType(type) {
+        this.currentType = type;
+
+        if (this.summaries[type]) {
+            // Gespeicherte Summary vorhanden - direkt anzeigen
+            this.showSummary(this.summaries[type].text);
+            console.log('📋 Gespeicherte Zusammenfassung geladen:', type);
+        } else {
+            // Keine gespeicherte Summary - zeige Placeholder
+            this.showPlaceholder();
+        }
+    }
+
+    copySummary() {
+        const currentSummary = this.summaries[this.currentType];
+        if (!currentSummary) return;
+
+        navigator.clipboard.writeText(currentSummary.text).then(() => {
+            this.transkriptor.showToast('In Zwischenablage kopiert', 'success');
+        }).catch(err => {
+            this.transkriptor.showToast('Kopieren fehlgeschlagen', 'error');
+        });
+    }
+
+    exportSummary() {
+        const currentSummary = this.summaries[this.currentType];
+        if (!currentSummary) return;
+
+        const filename = `zusammenfassung_${currentSummary.type}_${new Date().toISOString().slice(0, 10)}`;
+        const content = currentSummary.text;
+
+        this.transkriptor.downloadFile(content, `${filename}.txt`, 'text/plain');
+        this.transkriptor.showToast('Zusammenfassung exportiert', 'success');
+    }
+}
+
 class Transkriptor {
     constructor() {
         this.apiUrl = '/api';
@@ -143,6 +392,7 @@ class Transkriptor {
         this.audioStorage = new AudioStorage();
         this.selectedSegments = new Set();
         this.lastClickedIndex = null;
+        this.summaryManager = new SummaryManager(this);
 
         this.init();
     }
@@ -217,6 +467,21 @@ class Transkriptor {
         this.helpBtn = document.getElementById('helpBtn');
         this.helpModal = document.getElementById('helpModal');
         this.helpModalClose = document.getElementById('helpModalClose');
+
+        // Summary Panel
+        this.summaryPanel = document.getElementById('summaryPanel');
+        this.summaryType = document.getElementById('summaryType');
+        this.generateSummaryBtn = document.getElementById('generateSummaryBtn');
+        this.copySummaryBtn = document.getElementById('copySummaryBtn');
+        this.exportSummaryBtn = document.getElementById('exportSummaryBtn');
+        this.regenerateSummaryBtn = document.getElementById('regenerateSummaryBtn');
+
+        // Tabs
+        this.tabButtons = document.querySelectorAll('.tab-btn');
+        this.tabPanes = {
+            transcript: document.getElementById('transcriptTab'),
+            summary: document.getElementById('summaryTab')
+        };
     }
 
     bindEvents() {
@@ -300,6 +565,51 @@ class Transkriptor {
                 this.closeHelpModal();
             }
         });
+
+        // Summary Panel Events
+        this.summaryType.addEventListener('change', () => {
+            const type = this.summaryType.value;
+            this.summaryManager.switchSummaryType(type);
+        });
+        this.generateSummaryBtn.addEventListener('click', () => {
+            const type = this.summaryType.value;
+            this.summaryManager.generateSummary(type);
+        });
+        this.copySummaryBtn.addEventListener('click', () => this.summaryManager.copySummary());
+        this.exportSummaryBtn.addEventListener('click', () => this.summaryManager.exportSummary());
+        this.regenerateSummaryBtn.addEventListener('click', () => {
+            const type = this.summaryType.value;
+            this.summaryManager.generateSummary(type);
+        });
+
+        // Tab Switching Events
+        this.tabButtons.forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const tabName = e.currentTarget.dataset.tab;
+                this.switchTab(tabName);
+            });
+        });
+    }
+
+    switchTab(tabName) {
+        // Remove active class from all buttons
+        this.tabButtons.forEach(btn => btn.classList.remove('active'));
+
+        // Add active class to clicked button
+        const activeBtn = Array.from(this.tabButtons).find(btn => btn.dataset.tab === tabName);
+        if (activeBtn) activeBtn.classList.add('active');
+
+        // Hide all panes
+        Object.values(this.tabPanes).forEach(pane => {
+            pane.classList.remove('active');
+            pane.classList.add('hidden');
+        });
+
+        // Show selected pane
+        if (this.tabPanes[tabName]) {
+            this.tabPanes[tabName].classList.remove('hidden');
+            this.tabPanes[tabName].classList.add('active');
+        }
     }
 
     async checkApiStatus() {
@@ -402,7 +712,14 @@ class Transkriptor {
         this.renderTranscript();
         this.updateStats();
         this.loadAudioPlayer();
+        this.showSummaryPanel();
         this.saveToStorage();
+    }
+
+    showSummaryPanel() {
+        if (this.summaryPanel) {
+            this.summaryPanel.classList.remove('hidden');
+        }
     }
 
     loadAudioPlayer() {
@@ -436,6 +753,7 @@ class Transkriptor {
         Array.from(speakers).sort().forEach((speaker, index) => {
             const item = document.createElement('div');
             item.className = 'speaker-item';
+            // noinspection CssUnresolvedCustomProperty
             item.innerHTML = `
                 <div class="speaker-color" style="background: var(--speaker-${index % 8})"></div>
                 <input type="text" 
@@ -482,6 +800,7 @@ class Transkriptor {
         // Erstelle neues Speaker-Item
         const item = document.createElement('div');
         item.className = 'speaker-item';
+        // noinspection CssUnresolvedCustomProperty
         item.innerHTML = `
             <div class="speaker-color" style="background: var(--speaker-${speakerIndex % 8})"></div>
             <input type="text"
@@ -943,6 +1262,7 @@ class Transkriptor {
         const dataToSave = {
             transcriptData: this.transcriptData,
             speakerNames: this.speakerNames,
+            summaries: this.summaryManager.summaries || {},
             timestamp: Date.now()
         };
 
@@ -989,6 +1309,17 @@ class Transkriptor {
                 this.speakerNames = data.speakerNames || {};
                 console.log('✅ Transkript-Daten geladen');
 
+                // Zusammenfassungen wiederherstellen
+                if (data.summaries && Object.keys(data.summaries).length > 0) {
+                    // Neues Format: Mehrere Summaries
+                    this.summaryManager.summaries = data.summaries;
+                    console.log('✅ Zusammenfassungen geladen:', Object.keys(data.summaries).join(', '));
+                } else if (data.summary) {
+                    // Altes Format: Einzelne Summary (Rückwärtskompatibilität)
+                    this.summaryManager.summaries[data.summary.type] = data.summary;
+                    console.log('✅ Zusammenfassung geladen (alt):', data.summary.type);
+                }
+
                 // Audio aus IndexedDB wiederherstellen
                 try {
                     console.log('🔍 Suche Audio in IndexedDB...');
@@ -1006,6 +1337,21 @@ class Transkriptor {
                 }
 
                 this.showEditor();
+
+                // Zusammenfassung im UI anzeigen (falls vorhanden)
+                // Zeige die erste verfügbare Zusammenfassung oder die vom aktuellen Typ
+                const currentType = this.summaryType.value || 'short';
+                if (this.summaryManager.summaries[currentType]) {
+                    this.summaryManager.switchSummaryType(currentType);
+                } else {
+                    // Zeige erste verfügbare Zusammenfassung
+                    const firstType = Object.keys(this.summaryManager.summaries)[0];
+                    if (firstType) {
+                        this.summaryType.value = firstType;
+                        this.summaryManager.switchSummaryType(firstType);
+                    }
+                }
+
                 this.showToast('Letzte Transkription wiederhergestellt', 'success');
             } else {
                 console.warn('⚠️ Gespeicherte Daten sind zu alt (>7 Tage)');

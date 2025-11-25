@@ -268,7 +268,33 @@
                     <audio id="audioPlayer" preload="metadata"></audio>
                 </div>
 
-                <!-- Speaker Name Editor -->
+                <!-- Editor Tabs -->
+                <div class="editor-tabs">
+                    <button class="tab-btn active" data-tab="transcript">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                            <polyline points="14 2 14 8 20 8"/>
+                            <line x1="16" x2="8" y1="13" y2="13"/>
+                            <line x1="16" x2="8" y1="17" y2="17"/>
+                            <polyline points="10 9 9 9 8 9"/>
+                        </svg>
+                        Transkript
+                    </button>
+                    <button class="tab-btn" data-tab="summary">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                            <line x1="9" y1="10" x2="15" y2="10"/>
+                            <line x1="9" y1="14" x2="13" y2="14"/>
+                        </svg>
+                        Zusammenfassung
+                    </button>
+                </div>
+
+                <!-- Tab Content -->
+                <div class="tab-content">
+                    <!-- Transcript Tab -->
+                    <div class="tab-pane active" id="transcriptTab">
+                        <!-- Speaker Name Editor -->
                 <div class="speaker-panel" id="speakerPanel">
                     <div class="speaker-panel-header">
                         <h3>Sprecher benennen</h3>
@@ -309,6 +335,88 @@
                     <span id="segmentCount">0 Segmente</span>
                     <span id="duration">00:00:00</span>
                 </div>
+                    </div>
+                    <!-- End Transcript Tab -->
+
+                    <!-- Summary Tab -->
+                    <div class="tab-pane hidden" id="summaryTab">
+                        <!-- AI Summary Panel -->
+                        <div class="summary-panel" id="summaryPanel">
+                            <div class="summary-panel-header">
+                                <h3>
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                                        <line x1="9" y1="10" x2="15" y2="10"/>
+                                        <line x1="9" y1="14" x2="13" y2="14"/>
+                                    </svg>
+                                    KI-Zusammenfassung
+                                </h3>
+                                <div class="summary-controls">
+                                    <select id="summaryType" class="summary-type-select">
+                                        <option value="short">Kurze Übersicht (3-5 Sätze)</option>
+                                        <option value="structured">Strukturierte Zusammenfassung</option>
+                                        <option value="timeline">Zeitstempel-basiert</option>
+                                        <option value="actions">Action Items / Aufgaben</option>
+                                        <option value="tags">Tags / Schlagworte</option>
+                                    </select>
+                                    <button class="toolbar-btn primary" id="generateSummaryBtn">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+                                            <polyline points="2 17 12 22 22 17"/>
+                                            <polyline points="2 12 12 17 22 12"/>
+                                        </svg>
+                                        Generieren
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="summary-content">
+                                <div class="summary-placeholder" id="summaryPlaceholder">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+                                        <polyline points="2 17 12 22 22 17"/>
+                                        <polyline points="2 12 12 17 22 12"/>
+                                    </svg>
+                                    <p>Wählen Sie einen Zusammenfassungstyp und klicken Sie auf "Generieren"</p>
+                                </div>
+                                <div class="summary-loading hidden" id="summaryLoading">
+                                    <div class="summary-spinner">
+                                        <svg viewBox="0 0 50 50">
+                                            <circle cx="25" cy="25" r="20" fill="none" stroke-width="4"/>
+                                        </svg>
+                                    </div>
+                                    <p>Generiere Zusammenfassung mit KI...</p>
+                                </div>
+                                <div class="summary-text hidden" id="summaryText"></div>
+                            </div>
+                            <div class="summary-actions hidden" id="summaryActions">
+                                <button class="toolbar-btn" id="copySummaryBtn" title="In Zwischenablage kopieren">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                                    </svg>
+                                    Kopieren
+                                </button>
+                                <button class="toolbar-btn" id="exportSummaryBtn" title="Als Datei exportieren">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                        <polyline points="7,10 12,15 17,10"/>
+                                        <line x1="12" x2="12" y1="15" y2="3"/>
+                                    </svg>
+                                    Exportieren
+                                </button>
+                                <button class="toolbar-btn" id="regenerateSummaryBtn" title="Neu generieren">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <polyline points="23 4 23 10 17 10"/>
+                                        <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+                                    </svg>
+                                    Neu generieren
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- End Summary Tab -->
+                </div>
+                <!-- End Tab Content -->
             </section>
         </main>
 
