@@ -11,5 +11,6 @@ Please read **[docs/CLAUDE.md](docs/CLAUDE.md)** for complete project documentat
 - **[docs/CLAUDE.md](docs/CLAUDE.md)** - Complete project overview and architecture
 - **[docs/AI_SUMMARY.md](docs/AI_SUMMARY.md)** - AI summarization with Ollama LLM
 - **[docs/DIARIZATION_FIX.md](docs/DIARIZATION_FIX.md)** - Speaker diarization optimization guide
+- **[docs/TIMESTAMP_DRIFT_FIX.md](docs/TIMESTAMP_DRIFT_FIX.md)** - Fix timestamp drift and alignment issues
 - **[docs/GPU_MEMORY_FIX.md](docs/GPU_MEMORY_FIX.md)** - CUDA memory troubleshooting
 - **[docs/INDEXEDDB_STORAGE.md](docs/INDEXEDDB_STORAGE.md)** - Large audio file storage with IndexedDB

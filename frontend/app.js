@@ -489,6 +489,12 @@ class Transkriptor {
         this.lastClickedIndex = null;
         this.summaryManager = new SummaryManager(this);
 
+        // Initialize throttled word-level progress update (60 FPS = ~16ms)
+        this.wordUpdateThrottled = this.throttle(
+            this.updateWordLevelProgress.bind(this),
+            16
+        );
+
         this.init();
     }
 
@@ -1015,6 +1021,11 @@ class Transkriptor {
             segment.className = 'segment';
             segment.dataset.index = index;
 
+            // Mark if segment has word-level data
+            if (seg.words && seg.words.length > 0) {
+                segment.dataset.hasWords = 'true';
+            }
+
             // Build speaker dropdown options
             let speakerOptions = '';
             if (seg.speaker) {
@@ -1032,8 +1043,16 @@ class Transkriptor {
                     ` : ''}
                     <div class="segment-time">${this.formatTime(seg.start)} → ${this.formatTime(seg.end)}</div>
                 </div>
-                <div class="segment-text" contenteditable="true" data-index="${index}">${seg.text}</div>
+                <div class="segment-text" contenteditable="true" data-index="${index}" data-original-text="${this.escapeHtml(seg.text)}"></div>
             `;
+
+            // Render segment content (with or without word spans)
+            const textEl = segment.querySelector('.segment-text');
+            if (seg.words && seg.words.length > 0) {
+                this.renderWordsInSegment(textEl, seg.words, seg.text);
+            } else {
+                textEl.textContent = seg.text;
+            }
 
             // Track speaker changes
             if (seg.speaker) {
@@ -1050,9 +1069,20 @@ class Transkriptor {
             }
 
             // Track text changes
-            const textEl = segment.querySelector('.segment-text');
             textEl.addEventListener('blur', (e) => {
-                this.transcriptData.segments[index].text = e.target.textContent;
+                const newText = e.target.textContent.trim();
+                const originalText = seg.text;
+
+                this.transcriptData.segments[index].text = newText;
+
+                // Detect if segment was edited
+                if (newText !== originalText) {
+                    // Mark as edited - convert word spans to plain text
+                    segment.classList.add('edited-text');
+                    textEl.innerHTML = '';
+                    textEl.textContent = newText;
+                }
+
                 this.updateStats();
                 this.saveToStorage();
             });
@@ -1074,6 +1104,21 @@ class Transkriptor {
             });
 
             this.transcriptEditor.appendChild(segment);
+        });
+    }
+
+    renderWordsInSegment(textEl, words, fullText) {
+        textEl.innerHTML = '';
+
+        words.forEach((word, index) => {
+            const span = document.createElement('span');
+            span.className = 'word';
+            span.dataset.wordIndex = index;
+            span.dataset.start = word.start;
+            span.dataset.end = word.end;
+            span.textContent = word.word;
+
+            textEl.appendChild(span);
         });
     }
 
@@ -1141,6 +1186,12 @@ class Transkriptor {
                 break;
             case 'json':
                 this.downloadFile(JSON.stringify(this.transcriptData, null, 2), `${filename}.json`, 'application/json');
+                break;
+            case 'json-words':
+                this.downloadFile(this.generateJsonWithWords(), `${filename}_words.json`, 'application/json');
+                break;
+            case 'srt-words':
+                this.downloadFile(this.generateSrtWords(), `${filename}_words.srt`, 'text/plain');
                 break;
             case 'docx':
                 this.generateDocx(filename);
@@ -1238,6 +1289,62 @@ class Transkriptor {
 
         // Download as .doc (Word can open HTML files)
         this.downloadFile(html, `${filename}.doc`, 'application/msword');
+    }
+
+    generateJsonWithWords() {
+        const enhanced = {
+            metadata: {
+                exported: new Date().toISOString(),
+                hasWordTimestamps: true,
+                speakerNames: this.speakerNames,
+                transcriptionStats: this.transcriptionStats
+            },
+            segments: this.transcriptData.segments.map(seg => ({
+                start: seg.start,
+                end: seg.end,
+                text: seg.text,
+                speaker: seg.speaker,
+                speakerName: this.speakerNames[seg.speaker] || seg.speaker,
+                words: seg.words || []
+            }))
+        };
+
+        return JSON.stringify(enhanced, null, 2);
+    }
+
+    generateSrtWords() {
+        let output = '';
+        let counter = 1;
+
+        this.transcriptData.segments.forEach(seg => {
+            const speaker = seg.speaker ?
+                `[${this.speakerNames[seg.speaker] || seg.speaker}] ` : '';
+
+            if (seg.words?.length > 0) {
+                // Group words into subtitle chunks (max 5 words for readability)
+                const wordsPerChunk = 5;
+
+                for (let i = 0; i < seg.words.length; i += wordsPerChunk) {
+                    const chunk = seg.words.slice(i, i + wordsPerChunk);
+                    const chunkText = chunk.map(w => w.word).join('');
+                    const chunkStart = chunk[0].start;
+                    const chunkEnd = chunk[chunk.length - 1].end;
+
+                    output += `${counter}\n`;
+                    output += `${this.formatSrtTime(chunkStart)} --> ${this.formatSrtTime(chunkEnd)}\n`;
+                    output += `${i === 0 ? speaker : ''}${chunkText}\n\n`;
+                    counter++;
+                }
+            } else {
+                // Fall back to segment-level
+                output += `${counter}\n`;
+                output += `${this.formatSrtTime(seg.start)} --> ${this.formatSrtTime(seg.end)}\n`;
+                output += `${speaker}${seg.text}\n\n`;
+                counter++;
+            }
+        });
+
+        return output.trim();
     }
 
     downloadFile(content, filename, mimeType) {
@@ -1390,20 +1497,9 @@ class Transkriptor {
             this.audioCurrentTime.textContent = this.formatAudioTime(current);
         }
 
-        // Highlight current segment
-        if (this.transcriptData && this.transcriptData.segments) {
-            const currentSegment = this.transcriptData.segments.find(seg =>
-                current >= seg.start && current <= seg.end
-            );
-
-            const segments = this.transcriptEditor.querySelectorAll('.segment');
-            segments.forEach((seg, index) => {
-                if (currentSegment && this.transcriptData.segments[index] === currentSegment) {
-                    seg.classList.add('playing');
-                } else {
-                    seg.classList.remove('playing');
-                }
-            });
+        // Use throttled word-level highlighting
+        if (this.wordUpdateThrottled) {
+            this.wordUpdateThrottled(current);
         }
     }
 
@@ -1419,6 +1515,134 @@ class Transkriptor {
         const m = Math.floor(seconds / 60);
         const s = Math.floor(seconds % 60);
         return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    }
+
+    // ============================================
+    // Word-Level Sync - Audio Synchronization
+    // ============================================
+
+    updateWordLevelProgress(currentTime) {
+        if (!this.transcriptData?.segments) return;
+
+        let currentSegmentIndex = -1;
+
+        // Find current segment
+        for (let i = 0; i < this.transcriptData.segments.length; i++) {
+            const seg = this.transcriptData.segments[i];
+
+            if (currentTime >= seg.start && currentTime <= seg.end) {
+                currentSegmentIndex = i;
+                const segmentEl = this.transcriptEditor.querySelector(`[data-index="${i}"]`);
+
+                if (!segmentEl) continue;
+
+                const editState = this.getSegmentEditState(i);
+
+                if (editState === 'PRISTINE' && seg.words?.length > 0) {
+                    // Use word-level highlighting
+                    const wordIndex = this.findCurrentWord(seg.words, currentTime);
+                    this.highlightWord(segmentEl, wordIndex);
+                } else {
+                    // Fall back to segment-level highlighting
+                    this.highlightSegment(segmentEl);
+                }
+                break;
+            }
+        }
+
+        // Clear inactive segments
+        this.clearInactiveHighlights(currentSegmentIndex);
+    }
+
+    findCurrentWord(words, currentTime) {
+        // Find exact word
+        for (let i = 0; i < words.length; i++) {
+            if (currentTime >= words[i].start && currentTime <= words[i].end) {
+                return i;
+            }
+        }
+
+        // If between words, return most recent
+        for (let i = words.length - 1; i >= 0; i--) {
+            if (currentTime >= words[i].end) {
+                return i;
+            }
+        }
+
+        return 0; // Default to first word
+    }
+
+    highlightWord(segmentEl, wordIndex) {
+        const wordSpans = segmentEl.querySelectorAll('.word');
+        if (wordSpans.length === 0) return;
+
+        requestAnimationFrame(() => {
+            wordSpans.forEach((span, index) => {
+                span.classList.remove('active', 'past', 'future');
+
+                if (index < wordIndex) {
+                    span.classList.add('past');
+                } else if (index === wordIndex) {
+                    span.classList.add('active');
+                } else {
+                    span.classList.add('future');
+                }
+            });
+
+            segmentEl.classList.add('word-sync-active', 'playing');
+        });
+    }
+
+    highlightSegment(segmentEl) {
+        segmentEl.classList.add('playing');
+    }
+
+    clearInactiveHighlights(currentSegmentIndex) {
+        const allSegments = this.transcriptEditor.querySelectorAll('.segment');
+
+        allSegments.forEach((seg, index) => {
+            if (index !== currentSegmentIndex) {
+                seg.classList.remove('playing', 'word-sync-active');
+                seg.querySelectorAll('.word').forEach(w =>
+                    w.classList.remove('active', 'past', 'future')
+                );
+            }
+        });
+    }
+
+    // ============================================
+    // Word-Level Sync - Utility Methods
+    // ============================================
+
+    throttle(func, delay) {
+        let lastCall = 0;
+        return function(...args) {
+            const now = Date.now();
+            if (now - lastCall >= delay) {
+                lastCall = now;
+                func.apply(this, args);
+            }
+        };
+    }
+
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    getSegmentEditState(index) {
+        const seg = this.transcriptData.segments[index];
+        if (!seg.words || seg.words.length === 0) return 'NO_WORDS';
+
+        const segmentEl = this.transcriptEditor.querySelector(`[data-index="${index}"]`);
+        const textEl = segmentEl?.querySelector('.segment-text');
+        if (!textEl) return 'NO_WORDS';
+
+        const originalText = seg.text;
+        const currentText = textEl.textContent.trim();
+
+        return currentText === originalText ? 'PRISTINE' : 'EDITED';
     }
 
     // ============================================

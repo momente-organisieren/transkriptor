@@ -258,6 +258,16 @@ sudo systemctl restart docker
 2. Nutzungsbedingungen der pyannote-Modelle akzeptiert?
 3. Container neu starten nach Token-Änderung
 
+### Zeitstempel-Drift (Timestamps werden ungenau)
+
+Wenn Zeitstempel am Anfang stimmen, aber später nicht mehr zur Audio-Datei passen:
+
+1. **Wort-Zeitstempel aktivieren** (empfohlen) - Checkbox in den Optionen
+2. Bessere Audio-Qualität verwenden (weniger Hintergrundrauschen)
+3. Größeres Modell nutzen (`medium` oder `large-v3`)
+
+Siehe **[docs/TIMESTAMP_DRIFT_FIX.md](docs/TIMESTAMP_DRIFT_FIX.md)** für detaillierte Lösungen.
+
 ### Out of Memory (GPU)
 
 Kleineres Modell verwenden:

@@ -367,6 +367,16 @@ body::before {
     transform: rotate(45deg) scale(1);
 }
 
+.option-hint {
+    display: block;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    opacity: 0.7;
+    margin-top: 4px;
+    margin-left: 28px;
+    font-style: italic;
+}
+
 /* ============================================
    Progress Section
    ============================================ */
@@ -547,13 +557,20 @@ body::before {
     background: var(--bg-tertiary);
 }
 
-/* Audio Player Panel */
+/* Audio Player Panel - Sticky positioning */
 .audio-player-panel {
+    position: sticky;
+    top: 0;
+    z-index: 100;
     padding: var(--space-md) var(--space-lg);
-    background: var(--bg-secondary);
+    background: rgba(16, 15, 23, 0.95);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
     border-left: 1px solid rgba(255, 255, 255, 0.05);
     border-right: 1px solid rgba(255, 255, 255, 0.05);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    transition: box-shadow 0.2s ease;
 }
 
 .audio-player-controls {
@@ -896,6 +913,61 @@ body::before {
 .speaker-5 { background: rgba(242, 95, 76, 0.2); color: var(--speaker-5); }
 .speaker-6 { background: rgba(114, 117, 126, 0.2); color: var(--speaker-6); }
 .speaker-7 { background: rgba(238, 187, 195, 0.2); color: var(--speaker-7); }
+
+/* ============================================
+   Word-Level Highlighting
+   ============================================ */
+
+.word {
+    display: inline;
+    transition: background-color 0.15s ease, color 0.15s ease;
+    padding: 0 1px;
+    border-radius: 2px;
+}
+
+.word.active {
+    background-color: rgba(127, 90, 240, 0.3);
+    color: var(--accent);
+    font-weight: 600;
+    box-shadow: 0 1px 3px rgba(127, 90, 240, 0.2);
+    animation: word-highlight 0.3s ease;
+}
+
+.word.past {
+    color: var(--text-secondary);
+    opacity: 0.7;
+}
+
+.word.future {
+    color: var(--text-primary);
+}
+
+/* Segment states for word sync */
+.segment.word-sync-active .segment-text {
+    user-select: none; /* Prevent text selection during playback */
+}
+
+.segment.edited-text {
+    border-left-color: var(--warning);
+    position: relative;
+}
+
+.segment.edited-text::after {
+    content: "⚠";
+    position: absolute;
+    right: 8px;
+    top: 8px;
+    color: var(--warning);
+    font-size: 14px;
+    opacity: 0.5;
+}
+
+/* Smooth word highlight animation */
+@keyframes word-highlight {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.02); }
+    100% { transform: scale(1); }
+}
 
 /* ============================================
    Editor Tabs

@@ -186,10 +186,11 @@
                     </div>
                     <div class="option-group checkbox-group">
                         <label>
-                            <input type="checkbox" id="wordTimestamps">
+                            <input type="checkbox" id="wordTimestamps" checked>
                             <span class="checkbox-custom"></span>
-                            Wort-Zeitstempel
+                            Wort-Zeitstempel (empfohlen)
                         </label>
+                        <small class="option-hint">Verhindert Zeitstempel-Drift bei unklarer Audio-Qualität</small>
                     </div>
                 </div>
             </section>
@@ -237,6 +238,8 @@
                                 <button data-format="srt">Untertitel (.srt)</button>
                                 <button data-format="vtt">WebVTT (.vtt)</button>
                                 <button data-format="json">JSON (.json)</button>
+                                <button data-format="json-words">JSON mit Wörtern (.json)</button>
+                                <button data-format="srt-words">Enhanced SRT (.srt)</button>
                                 <button data-format="docx">Word (.docx)</button>
                             </div>
                         </div>
