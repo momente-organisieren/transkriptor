@@ -620,7 +620,7 @@ body::before {
     font-family: var(--font-mono);
     font-size: 0.875rem;
     color: var(--text-secondary);
-    min-width: 100px;
+    min-width: 150px;
     flex-shrink: 0;
 }
 

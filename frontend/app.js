@@ -487,6 +487,8 @@ class Transkriptor {
         this.audioStorage = new AudioStorage();
         this.selectedSegments = new Set();
         this.lastClickedIndex = null;
+        this.lastScrolledSegmentIndex = -1;
+        this.isUpdatingSeekSlider = false;
         this.summaryManager = new SummaryManager(this);
 
         // Initialize throttled word-level progress update (60 FPS = ~16ms)
@@ -643,6 +645,9 @@ class Transkriptor {
         // Audio Player Events
         this.audioPlayBtn.addEventListener('click', () => this.toggleAudioPlayback());
         this.audioSeek.addEventListener('input', (e) => {
+            // Ignore if we're programmatically updating the slider
+            if (this.isUpdatingSeekSlider) return;
+
             const time = (e.target.value / 100) * this.audioPlayer.duration;
             this.audioPlayer.currentTime = time;
         });
@@ -1099,7 +1104,8 @@ class Transkriptor {
                     e.preventDefault();
                     this.handleSegmentSelection(index, e.shiftKey, e.ctrlKey);
                 } else {
-                    this.playSegment(seg);
+                    // Use index to get current segment data (fixes stale closure bug)
+                    this.playSegment(this.transcriptData.segments[index]);
                 }
             });
 
@@ -1116,7 +1122,13 @@ class Transkriptor {
             span.dataset.wordIndex = index;
             span.dataset.start = word.start;
             span.dataset.end = word.end;
-            span.textContent = word.word;
+
+            // Add space before word if it doesn't already have one (except first word)
+            let wordText = word.word;
+            if (index > 0 && !wordText.startsWith(' ')) {
+                wordText = ' ' + wordText;
+            }
+            span.textContent = wordText;
 
             textEl.appendChild(span);
         });
@@ -1493,7 +1505,11 @@ class Transkriptor {
         const duration = this.audioPlayer.duration;
 
         if (!isNaN(duration)) {
+            // Set flag to prevent circular seek bug
+            this.isUpdatingSeekSlider = true;
             this.audioSeek.value = (current / duration) * 100;
+            this.isUpdatingSeekSlider = false;
+
             this.audioCurrentTime.textContent = this.formatAudioTime(current);
         }
 
@@ -1511,10 +1527,11 @@ class Transkriptor {
     }
 
     formatAudioTime(seconds) {
-        if (!seconds || isNaN(seconds)) return '00:00';
-        const m = Math.floor(seconds / 60);
+        if (!seconds || isNaN(seconds)) return '00:00:00';
+        const h = Math.floor(seconds / 3600);
+        const m = Math.floor((seconds % 3600) / 60);
         const s = Math.floor(seconds % 60);
-        return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+        return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
     }
 
     // ============================================
@@ -1546,12 +1563,32 @@ class Transkriptor {
                     // Fall back to segment-level highlighting
                     this.highlightSegment(segmentEl);
                 }
+
+                // Auto-scroll to current segment if audio is playing
+                if (!this.audioPlayer.paused) {
+                    this.scrollToSegment(segmentEl, i);
+                }
+
                 break;
             }
         }
 
         // Clear inactive segments
         this.clearInactiveHighlights(currentSegmentIndex);
+    }
+
+    scrollToSegment(segmentEl, segmentIndex) {
+        // Only scroll if segment changed (avoid continuous scrolling)
+        if (this.lastScrolledSegmentIndex === segmentIndex) return;
+
+        this.lastScrolledSegmentIndex = segmentIndex;
+
+        // Scroll segment into view smoothly, centered in viewport
+        segmentEl.scrollIntoView({
+            behavior: 'smooth',
+            block: 'center',
+            inline: 'nearest'
+        });
     }
 
     findCurrentWord(words, currentTime) {
