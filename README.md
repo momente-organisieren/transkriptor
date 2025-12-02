@@ -401,6 +401,7 @@ MIT License – Frei verwendbar für private und kommerzielle Zwecke.
 Detaillierte Dokumentation findest du im `docs/` Verzeichnis:
 
 - **[docs/CLAUDE.md](docs/CLAUDE.md)** – Vollständige Projektübersicht und Architektur
+- **[docs/DEVELOPMENT_LOG.md](docs/DEVELOPMENT_LOG.md)** – Entwicklungs-Timeline, Features und behobene Bugs
 - **[docs/AI_SUMMARY.md](docs/AI_SUMMARY.md)** – Ollama Integration, Prompts und Modellvergleiche
 - **[docs/INDEXEDDB_STORAGE.md](docs/INDEXEDDB_STORAGE.md)** – Datenspeicherung mit IndexedDB (Version 2)
 - **[docs/GPU_MEMORY_FIX.md](docs/GPU_MEMORY_FIX.md)** – CUDA Memory Troubleshooting
